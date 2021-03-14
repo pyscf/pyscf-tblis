@@ -13,16 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-'''
-A Python interface to mimic numpy.einsum
-'''
-
 import re
 import ctypes
 import numpy
-from pyscf.lib import misc
 
-libtblis = misc.load_library('libtblis_einsum')
+libtblis = numpy.ctypeslib.load_library('libtblis_einsum', os.path.dirname(__file__))
 
 libtblis.as_einsum.restype = None
 libtblis.as_einsum.argtypes = (
@@ -46,10 +41,10 @@ tblis_dtype = {
     numpy.dtype(numpy.complex128) : 3,
 }
 
-EINSUM_MAX_SIZE = getattr(misc.__config__, 'lib_einsum_max_size', 2000)
+EINSUM_MAX_SIZE = 2000
 
 _numpy_einsum = numpy.einsum
-def _contract(subscripts, *tensors, **kwargs):
+def contract(subscripts, *tensors, **kwargs):
     '''
     c = alpha * contract(a, b) + beta * c
 
