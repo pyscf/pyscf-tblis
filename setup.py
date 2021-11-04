@@ -25,6 +25,8 @@ metadata = globals()
 import os
 import sys
 from setuptools import setup, find_namespace_packages, Extension
+from setuptools.command.build_ext import build_ext
+
 
 topdir = os.path.abspath(os.path.join(__file__, '..'))
 modules = find_namespace_packages(include=['pyscf.*'])
@@ -43,6 +45,49 @@ def guess_version():
 if not metadata.get('VERSION', None):
     VERSION = guess_version()
 
+class CMakeBuildExt(build_ext):
+    def run(self):
+        extension = self.extensions[0]
+        assert extension.name == 'libtblis_einsum'
+        self.build_cmake(extension)
+
+    def build_cmake(self, extension):
+        self.announce('Configuring extensions', level=3)
+        src_dir = os.path.abspath(os.path.join(__file__, '..', 'pyscf', 'tblis_einsum'))
+        cmd = ['cmake', f'-S{src_dir}', f'-B{self.build_temp}']
+        configure_args = os.getenv('CMAKE_CONFIGURE_ARGS')
+        if configure_args:
+            cmd.extend(configure_args.split(' '))
+        self.spawn(cmd)
+
+        self.announce('Building binaries', level=3)
+        cmd = ['cmake', '--build', self.build_temp, '-j4']
+        build_args = os.getenv('CMAKE_BUILD_ARGS')
+        if build_args:
+            cmd.extend(build_args.split(' '))
+        if self.dry_run:
+            self.announce(' '.join(cmd))
+        else:
+            self.spawn(cmd)
+
+    # To remove the infix string like cpython-37m-x86_64-linux-gnu.so
+    # Python ABI updates since 3.5
+    # https://www.python.org/dev/peps/pep-3149/
+    def get_ext_filename(self, ext_name):
+        ext_path = ext_name.split('.')
+        filename = build_ext.get_ext_filename(self, ext_name)
+        name, ext_suffix = os.path.splitext(filename)
+        return os.path.join(*ext_path) + ext_suffix
+
+# Here to change the order of sub_commands to ['build_py', ..., 'build_ext']
+# C extensions by build_ext are installed in source directory.
+# build_py then copy all .so files into "build_ext.build_lib" directory.
+# We have to ensure build_ext being executed earlier than build_py.
+# A temporary workaround is to modifying the order of sub_commands in build class
+from distutils.command.build import build
+build.sub_commands = ([c for c in build.sub_commands if c[0] == 'build_ext'] +
+                      [c for c in build.sub_commands if c[0] != 'build_ext'])
+
 settings = {
     'name': metadata.get('NAME', None),
     'version': VERSION,
@@ -50,6 +95,8 @@ settings = {
     'author': metadata.get('AUTHOR', None),
     'author_email': metadata.get('AUTHOR_EMAIL', None),
     'install_requires': metadata.get('DEPENDENCIES', []),
+    'ext_modules': [Extension('libtblis_einsum', [])],
+    'cmdclass': {'build_ext': CMakeBuildExt},
 }
 setup(
     include_package_data=True,
