@@ -1,7 +1,10 @@
 include MANIFEST.in
 include README.md setup.py CHANGELOG LICENSE
 
-prune pyscf/lib/build pyscf/build
+global-exclude *.py[cod]
+prune pyscf/lib/build
 
-recursive-include pyscf *.dat *.so *.dylib
-recursive-exclude pyscf *.c *.h
+include pyscf/lib/*.so
+include pyscf/lib/*.dylib
+
+recursive-include pyscf/tblis_einsum *.c *.cxx *.h CMakeLists.txt
