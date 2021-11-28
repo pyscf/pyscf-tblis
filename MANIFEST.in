@@ -4,7 +4,7 @@ include README.md setup.py CHANGELOG LICENSE
 global-exclude *.py[cod]
 prune pyscf/lib/build
 
-include pyscf/lib/*.so
-include pyscf/lib/*.dylib
+include pyscf/*/*.so*
+include pyscf/*/*.dylib
 
 recursive-include pyscf/tblis_einsum *.c *.cxx *.h CMakeLists.txt

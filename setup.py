@@ -55,6 +55,13 @@ class CMakeBuildExt(build_ext):
         self.announce('Configuring extensions', level=3)
         src_dir = os.path.abspath(os.path.join(__file__, '..', 'pyscf', 'tblis_einsum'))
         cmd = ['cmake', f'-S{src_dir}', f'-B{self.build_temp}']
+        if sys.platform.startswith('linux'):
+            # When compiling tblis, the configure command needs to be
+            # export ORIGIN='$ORIGIN'
+            # ../configure LDFLAGS='-Wl,-rpath -Wl,$$ORIGIN -Wl,-z,origin')
+            # See https://stackoverflow.com/questions/62034115/difficulty-adding-origin-to-ldflags
+            os.environ['ORIGIN'] = '$ORIGIN'
+            os.environ['LDFLAGS'] = '-Wl,-rpath -Wl,$$ORIGIN -Wl,-z,origin'
         configure_args = os.getenv('CMAKE_CONFIGURE_ARGS')
         if configure_args:
             cmd.extend(configure_args.split(' '))
