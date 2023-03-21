@@ -71,12 +71,18 @@ def contract(subscripts, *tensors, **kwargs):
 
     sub_idx = re.split(',|->', subscripts)
     indices  = ''.join(sub_idx)
-    if '->' not in subscripts:
-        # Find chararacters which appear only once in the subscripts for c_descr
-        for x in set(indices):
-            if indices.count(x) > 1:
-                indices = indices.replace(x, '')
-        sub_idx += [indices]
+    if '->' not in subscripts or any(indices.count(x) != 2 for x in set(indices)):
+        return _numpy_einsum(subscripts, a, b)
+
+    a_descr, b_descr, c_descr = sub_idx
+    uniq_idxa = set(a_descr)
+    uniq_idxb = set(b_descr)
+    # Find the shared indices being summed over
+    shared_idx = uniq_idxa.intersection(uniq_idxb)
+    if ((not shared_idx) or  # Indices must overlap
+        # repeated indices (e.g. 'iijk,kl->jl')
+        len(a_descr) != len(uniq_idxa) or len(b_descr) != len(uniq_idxb)):
+        return _numpy_einsum(subscripts, a, b)
 
     alpha = kwargs.get('alpha', 1)
     beta  = kwargs.get('beta', 0)
@@ -85,10 +91,10 @@ def contract(subscripts, *tensors, **kwargs):
     beta  = numpy.asarray(beta , dtype=c_dtype)
     a = numpy.asarray(a, dtype=c_dtype)
     b = numpy.asarray(b, dtype=c_dtype)
-
+    assert len(a_descr) == a.ndim
+    assert len(b_descr) == b.ndim
     a_shape = a.shape
     b_shape = b.shape
-    a_descr, b_descr, c_descr = sub_idx
     a_shape_dic = dict(zip(a_descr, a_shape))
     b_shape_dic = dict(zip(b_descr, b_shape))
     if any(a_shape_dic[x] != b_shape_dic[x]
@@ -123,4 +129,3 @@ def contract(subscripts, *tensors, **kwargs):
                        c, c.ndim, c_shape, c_strides, c_descr.encode('ascii'),
                        tblis_dtype[c_dtype], alpha, beta)
     return c
-
