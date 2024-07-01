@@ -83,7 +83,7 @@ else()
   endif()
 
   if (tblis_FOUND AND NOT TARGET tblis::tblis)
-    add_library(tblis::tblis IMPORTED)
+    add_library(tblis::tblis IMPORTED SHARED)
     set_property(TARGET tblis::tblis PROPERTY IMPORTED_LOCATION ${TBLIS_LIBRARY})
     target_include_directories(tblis::tblis INTERFACE ${TBLIS_INCLUDE_DIR})
   endif()
