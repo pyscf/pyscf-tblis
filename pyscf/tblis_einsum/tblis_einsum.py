@@ -20,8 +20,8 @@ import numpy
 
 libtblis = numpy.ctypeslib.load_library('libtblis_einsum', os.path.dirname(__file__))
 
-libtblis.as_einsum.restype = None
-libtblis.as_einsum.argtypes = (
+libtblis.tensor_mult.restype = None
+libtblis.tensor_mult.argtypes = (
     numpy.ctypeslib.ndpointer(), ctypes.c_int,
     ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_size_t),
     ctypes.POINTER(ctypes.c_char),
@@ -35,6 +35,30 @@ libtblis.as_einsum.argtypes = (
     numpy.ctypeslib.ndpointer(), numpy.ctypeslib.ndpointer()
 )
 
+libtblis.tensor_add.restype = None
+libtblis.tensor_add.argtypes = (
+    numpy.ctypeslib.ndpointer(), ctypes.c_int,
+    ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_size_t),
+    ctypes.POINTER(ctypes.c_char),
+    numpy.ctypeslib.ndpointer(), ctypes.c_int,
+    ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_size_t),
+    ctypes.POINTER(ctypes.c_char),
+    ctypes.c_int,
+    numpy.ctypeslib.ndpointer(), numpy.ctypeslib.ndpointer()
+)
+
+libtblis.tensor_dot.restype = None
+libtblis.tensor_dot.argtypes = (
+    numpy.ctypeslib.ndpointer(), ctypes.c_int,
+    ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_size_t),
+    ctypes.POINTER(ctypes.c_char),
+    numpy.ctypeslib.ndpointer(), ctypes.c_int,
+    ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_size_t),
+    ctypes.POINTER(ctypes.c_char),
+    ctypes.c_int,
+    numpy.ctypeslib.ndpointer()
+)
+
 tblis_dtype = {
     numpy.dtype(numpy.float32)    : 0,
     numpy.dtype(numpy.double)     : 1,
@@ -43,6 +67,29 @@ tblis_dtype = {
 }
 
 EINSUM_MAX_SIZE = 2000
+
+def ctype_strides(*arrays):
+    return [ (ctypes.c_size_t*arr.ndim)(*[x//arr.dtype.itemsize for x in arr.strides]) for arr in arrays ]
+
+def ctype_shapes(*arrays):
+    return [ (ctypes.c_size_t*arr.ndim)(*arr.shape) for arr in arrays ]
+
+def check_tblis_shapes(a, a_inds, b, b_inds, subscripts=None, c_inds=None):
+    a_shape_dic = dict(zip(a_inds, a.shape))
+    b_shape_dic = dict(zip(b_inds, b.shape))
+    if subscripts is None:
+        subscripts = a_inds + ',' + b_inds
+    if any(a_shape_dic[x] != b_shape_dic[x]
+           for x in set(a_inds).intersection(b_inds)):
+        raise ValueError('operands dimension error for "%s" : %s %s'
+                         % (subscripts, a.shape, b.shape))
+
+    if c_inds is not None:
+        ab_shape_dic = a_shape_dic
+        ab_shape_dic.update(b_shape_dic)
+        c_shape = tuple([ab_shape_dic[x] for x in c_inds])
+        return c_shape
+    return None
 
 _numpy_einsum = numpy.einsum
 def contract(subscripts, *tensors, **kwargs):
@@ -87,45 +134,87 @@ def contract(subscripts, *tensors, **kwargs):
     alpha = kwargs.get('alpha', 1)
     beta  = kwargs.get('beta', 0)
     c_dtype = numpy.result_type(c_dtype, alpha, beta)
-    alpha = numpy.asarray(alpha, dtype=c_dtype)
-    beta  = numpy.asarray(beta , dtype=c_dtype)
+
     a = numpy.asarray(a, dtype=c_dtype)
     b = numpy.asarray(b, dtype=c_dtype)
-    assert len(a_descr) == a.ndim
-    assert len(b_descr) == b.ndim
-    a_shape = a.shape
-    b_shape = b.shape
-    a_shape_dic = dict(zip(a_descr, a_shape))
-    b_shape_dic = dict(zip(b_descr, b_shape))
-    if any(a_shape_dic[x] != b_shape_dic[x]
-           for x in set(a_descr).intersection(b_descr)):
-        raise ValueError('operands dimension error for "%s" : %s %s'
-                         % (subscripts, a_shape, b_shape))
 
-    ab_shape_dic = a_shape_dic
-    ab_shape_dic.update(b_shape_dic)
-    c_shape = tuple([ab_shape_dic[x] for x in c_descr])
+    c_shape = check_tblis_shapes(a, a_descr, b, b_descr, subscripts=subscripts, c_inds=c_descr)
 
     out = kwargs.get('out', None)
     if out is None:
         order = kwargs.get('order', 'C')
         c = numpy.empty(c_shape, dtype=c_dtype, order=order)
     else:
-        assert(out.dtype == c_dtype)
-        assert(out.shape == c_shape)
         c = out
+    return tensor_mult(a, a_descr, b, b_descr, c, c_descr, alpha=alpha, beta=beta, dtype=c_dtype)
 
-    a_shape = (ctypes.c_size_t*a.ndim)(*a_shape)
-    b_shape = (ctypes.c_size_t*b.ndim)(*b_shape)
-    c_shape = (ctypes.c_size_t*c.ndim)(*c_shape)
+def tensor_mult(a, a_inds, b, b_inds, c, c_inds, alpha=1, beta=0, dtype=None):
+    ''' Wrapper for tblis_tensor_mult
 
-    nbytes = c_dtype.itemsize
-    a_strides = (ctypes.c_size_t*a.ndim)(*[x//nbytes for x in a.strides])
-    b_strides = (ctypes.c_size_t*b.ndim)(*[x//nbytes for x in b.strides])
-    c_strides = (ctypes.c_size_t*c.ndim)(*[x//nbytes for x in c.strides])
+    Performs the einsum operation
+    c_{c_inds} = alpha * SUM[a_{a_inds} * b_{b_inds}] + beta * c_{c_inds}
+    where the sum is over indices in a_inds and b_inds that are not in c_inds.
+    '''
 
-    libtblis.as_einsum(a, a.ndim, a_shape, a_strides, a_descr.encode('ascii'),
-                       b, b.ndim, b_shape, b_strides, b_descr.encode('ascii'),
-                       c, c.ndim, c_shape, c_strides, c_descr.encode('ascii'),
-                       tblis_dtype[c_dtype], alpha, beta)
+    if dtype is None:
+        dtype = c.dtype.type
+    assert dtype == c.dtype.type
+    assert dtype == a.dtype.type
+    assert dtype == b.dtype.type
+
+    alpha = numpy.asarray(alpha, dtype=dtype)
+    beta  = numpy.asarray(beta , dtype=dtype)
+
+    assert len(a_inds) == a.ndim
+    assert len(b_inds) == b.ndim
+    assert len(c_inds) == c.ndim
+
+    a_shape, b_shape, c_shape = ctype_shapes(a, b, c)
+    a_strides, b_strides, c_strides = ctype_strides(a, b, c)
+    assert c.shape == check_tblis_shapes(a, a_inds, b, b_inds, c_inds=c_inds)
+
+
+    libtblis.tensor_mult(a, a.ndim, a_shape, a_strides, a_inds.encode('ascii'),
+                       b, b.ndim, b_shape, b_strides, b_inds.encode('ascii'),
+                       c, c.ndim, c_shape, c_strides, c_inds.encode('ascii'),
+                       tblis_dtype[c.dtype], alpha, beta)
     return c
+
+
+def tensor_add(a, a_inds, b, b_inds, alpha=1, beta=1):
+    '''Wrapper for tblis_tensor_add
+    '''
+    assert a.dtype.type == b.dtype.type
+
+    alpha = numpy.asarray(alpha, dtype=b.dtype)
+    beta  = numpy.asarray(beta , dtype=b.dtype)
+
+    assert len(a_inds) == a.ndim
+    assert len(b_inds) == b.ndim
+
+    a_shape, b_shape = ctype_shapes(a, b)
+    a_strides, b_strides = ctype_strides(a, b)
+
+    libtblis.tensor_add(a, a.ndim, a_shape, a_strides, a_inds.encode('ascii'),
+                       b, b.ndim, b_shape, b_strides, b_inds.encode('ascii'),
+                       tblis_dtype[b.dtype], alpha, beta)
+
+def tensor_dot(a, a_inds, b, b_inds):
+    '''Wrapper for tblis_tensor_dot
+    '''
+
+    assert a.dtype.type == b.dtype.type
+
+    assert len(a_inds) == a.ndim
+    assert len(b_inds) == b.ndim
+
+    a_shape, b_shape = ctype_shapes(a, b)
+    a_strides, b_strides = ctype_strides(a, b)
+
+    result = numpy.zeros(1, dtype=a.dtype.type)
+
+    libtblis.tensor_dot(a, a.ndim, a_shape, a_strides, a_inds.encode('ascii'),
+                       b, b.ndim, b_shape, b_strides, b_inds.encode('ascii'),
+                       tblis_dtype[b.dtype], result)
+
+    return result[0]

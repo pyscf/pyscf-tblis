@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from pyscf.tblis_einsum import tblis_einsum
+from pyscf.tblis_einsum import tblis_einsum, tensor_add, tensor_mult, tensor_dot
 
 def setUpModule():
     global bak
@@ -128,6 +128,30 @@ class KnownValues(unittest.TestCase):
         res_np = np.einsum("ij,jk->k", c, c)
         res_tblis = tblis_einsum.contract("ij,jk->k", c, c)
         self.assertTrue (abs(res_np - res_tblis).max() < 1e-13)
+
+    def test_tensor_add(self):
+        a = np.random.random((3,3,3,3))
+        b = np.random.random((3,3,3,3))
+        c0 = np.transpose(a, (1,2,3,0)) + b
+        tensor_add(a, 'lijk', b, 'ijkl')
+        self.assertTrue(abs(c0-b).max() < 1e-14)
+
+    def test_tensor_add_scaled(self):
+        a = np.random.random((7,1,3,4))
+        b = np.random.random((7,1,3,4))
+        alpha = 2.0
+        beta = 3.0
+        c0 = alpha*a + beta*b
+        tensor_add(a, 'ijkl', b, 'ijkl', alpha=alpha, beta=beta)
+        self.assertTrue(abs(c0-b).max() < 1e-14)
+
+    def test_tensor_dot(self):
+        a = np.random.random((3,3,3,3))
+        b = np.random.random((3,3,3,3))
+        ans = np.einsum('lijk,ijkl->', a, b)
+        ans2 = tensor_dot(a, 'lijk', b, 'ijkl')
+        self.assertTrue(abs(ans-ans2) < 1e-14)
+
 
 
 if __name__ == '__main__':

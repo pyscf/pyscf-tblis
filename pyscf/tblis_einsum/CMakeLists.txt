@@ -30,25 +30,30 @@ if (CMAKE_COMPILER_IS_GNUCC) # Does it skip the link flag on old OsX?
   endif()
 endif()
 
-# See also https://gitlab.kitware.com/cmake/community/wikis/doc/cmake/RPATH-handling
-if (WIN32)
-  #?
-elseif (APPLE)
-  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-  set(CMAKE_INSTALL_RPATH "@loader_path")
-  set(CMAKE_BUILD_RPATH "@loader_path")
-else ()
-  set(CMAKE_SKIP_BUILD_RPATH  True)
-  set(CMAKE_BUILD_WITH_INSTALL_RPATH True)
-  set(CMAKE_INSTALL_RPATH "\$ORIGIN")
-endif ()
+option(VENDOR_TBLIS "Download and build tblis" on)
+
+if(VENDOR_TBLIS)
+  # The following is needed because TBLIS will be installed in the same folder
+  # as the built CPython extension.
+  # See also https://gitlab.kitware.com/cmake/community/wikis/doc/cmake/RPATH-handling
+  if (WIN32)
+    #?
+  elseif (APPLE)
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+    set(CMAKE_INSTALL_RPATH "@loader_path")
+    set(CMAKE_BUILD_RPATH "@loader_path")
+  else ()
+    set(CMAKE_SKIP_BUILD_RPATH  True)
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH True)
+    set(CMAKE_INSTALL_RPATH "\$ORIGIN")
+  endif ()
+endif()
 
 set(C_LINK_TEMPLATE "<CMAKE_C_COMPILER> <CMAKE_SHARED_LIBRARY_C_FLAGS> <LANGUAGE_COMPILE_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS> -o <TARGET> <OBJECTS> <LINK_LIBRARIES>")
 set(CXX_LINK_TEMPLATE "<CMAKE_CXX_COMPILER> <CMAKE_SHARED_LIBRARY_CXX_FLAGS> <LANGUAGE_COMPILE_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS> -o <TARGET> <OBJECTS> <LINK_LIBRARIES>")
 
 add_library(tblis_einsum SHARED as_einsum.cxx)
 
-option(VENDOR_TBLIS "Download and build tblis" on)
 set_target_properties(tblis_einsum PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}
   COMPILE_FLAGS "-std=c++11")
